@@ -5,8 +5,9 @@ import torch
 import torchvision
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms import ToTensor, Compose, Normalize
+from torchvision.utils import save_image
 from tqdm import tqdm
-
+from einops import rearrange
 from model import *
 from utils import CSVLogger, setup_seed
 
@@ -23,8 +24,16 @@ if __name__ == '__main__':
     parser.add_argument('--model_path', type=str, default='vit-t-mae.pt')
     parser.add_argument("--csv_log", type=str, default="auto",
                         help="Path to CSV file for epoch-level metrics.")
+    parser.add_argument("--save_images_dir", type=str, default="logs/cifar10/mae-pretrain/images",
+                    help="Directory to save reconstructed image grids.")
+    parser.add_argument("--save_images_n", type=int, default=16,
+                        help="How many validation images to visualize/save each epoch (must be a square number like 16, 25).")
 
     args = parser.parse_args()
+    if args.save_images_dir:
+        if np.sqrt(args.save_images_n) ** 2 != args.save_images_n:
+            raise ValueError("save_images_n must be a square number.")
+        os.makedirs(args.save_images_dir, exist_ok=True)
 
     setup_seed(args.seed)
 
@@ -77,16 +86,36 @@ if __name__ == '__main__':
         })
         print(f'In epoch {e}, average training loss is {avg_loss}.')
 
-        ''' visualize the first 16 predicted images on val dataset'''
+        '''
+        Visualize + save the first N predicted images on val dataset
+        '''
         model.eval()
         with torch.no_grad():
-            val_img = torch.stack([val_dataset[i][0] for i in range(16)])
-            val_img = val_img.to(device)
-            predicted_val_img, mask = model(val_img)
-            predicted_val_img = predicted_val_img * mask + val_img * (1 - mask)
-            img = torch.cat([val_img * (1 - mask), predicted_val_img, val_img], dim=0)
-            img = rearrange(img, '(v h1 w1) c h w -> c (h1 h) (w1 v w)', w1=2, v=3)
-            writer.add_image('mae_image', (img + 1) / 2, global_step=e)
+            n = args.save_images_n  # take the first n images from val set
+            val_img = torch.stack([val_dataset[i][0] for i in range(n)]).to(device)  # [n, C, H, W]
+            predicted_val_img, mask = model(val_img)  # both [n, C, H, W]
 
-        ''' save model '''
+            # compose the visualization: masked input | reconstructed | original
+            # (masked input = visible patches only)
+            visible_only = val_img * (1 - mask)
+            predicted_val_img = predicted_val_img * mask + val_img * (1 - mask)
+            visualization = torch.cat([visible_only, predicted_val_img, val_img], dim=0)   # [3n, C, H, W]
+
+            # arrange into a grid: 3 rows (masked/pred/orig) × sqrt(n) columns
+            side = int(n ** 0.5)  # assume n is a perfect square (e.g., 16 -> 4)
+            img_grid = rearrange(visualization, '(v h1 w1) c h w -> c (h1 h) (w1 v w)', v=3, w1=side)
+
+            # normalize to [0,1] for saving/visualization
+            img_grid = (img_grid + 1) / 2
+            img_grid = img_grid.clamp(0, 1).detach().cpu()
+
+            # TensorBoard
+            writer.add_image('mae_image', img_grid, global_step=e)
+            # Save a PNG per epoch
+            out_path = os.path.join(args.save_images_dir, f"epoch_{e:04d}.png")
+            save_image(img_grid, out_path)   # writes a single big grid image
+
+        '''
+        Save model
+        '''
         torch.save(model, args.model_path)

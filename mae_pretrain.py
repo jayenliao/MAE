@@ -8,7 +8,7 @@ from torchvision.transforms import ToTensor, Compose, Normalize
 from tqdm import tqdm
 
 from model import *
-from utils import setup_seed
+from utils import CSVLogger, setup_seed
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -21,6 +21,8 @@ if __name__ == '__main__':
     parser.add_argument('--total_epoch', type=int, default=2000)
     parser.add_argument('--warmup_epoch', type=int, default=200)
     parser.add_argument('--model_path', type=str, default='vit-t-mae.pt')
+    parser.add_argument("--csv_log", type=str, default="auto",
+                        help="Path to CSV file for epoch-level metrics.")
 
     args = parser.parse_args()
 
@@ -36,12 +38,18 @@ if __name__ == '__main__':
     val_dataset = torchvision.datasets.CIFAR10('data', train=False, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     dataloader = torch.utils.data.DataLoader(train_dataset, load_batch_size, shuffle=True, num_workers=4)
     writer = SummaryWriter(os.path.join('logs', 'cifar10', 'mae-pretrain'))
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    if args.csv_log == "auto":
+        csv_log = os.path.join('logs', 'cifar10', 'mae-pretrain', 'metrics.csv')
+        os.makedirs(os.path.dirname(csv_log), exist_ok=True)
+    else:
+        csv_log = args.csv_log
+    csv_logger = CSVLogger(csv_log, fieldnames=["epoch", "train_loss", "lr", "mask_ratio"])
 
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = MAE_ViT(mask_ratio=args.mask_ratio).to(device)
     optim = torch.optim.AdamW(model.parameters(), lr=args.base_learning_rate * args.batch_size / 256, betas=(0.9, 0.95), weight_decay=args.weight_decay)
     lr_func = lambda epoch: min((epoch + 1) / (args.warmup_epoch + 1e-8), 0.5 * (math.cos(epoch / args.total_epoch * math.pi) + 1))
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_func, verbose=True)
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_func)
 
     step_count = 0
     optim.zero_grad()
@@ -61,7 +69,13 @@ if __name__ == '__main__':
         lr_scheduler.step()
         avg_loss = sum(losses) / len(losses)
         writer.add_scalar('mae_loss', avg_loss, global_step=e)
-        print(f'In epoch {e}, average traning loss is {avg_loss}.')
+        csv_logger.log({
+            "epoch": e,
+            "train_loss": float(avg_loss),
+            "lr": float(lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else optim.param_groups[0]["lr"]),
+            "mask_ratio": float(args.mask_ratio),
+        })
+        print(f'In epoch {e}, average training loss is {avg_loss}.')
 
         ''' visualize the first 16 predicted images on val dataset'''
         model.eval()
@@ -73,6 +87,6 @@ if __name__ == '__main__':
             img = torch.cat([val_img * (1 - mask), predicted_val_img, val_img], dim=0)
             img = rearrange(img, '(v h1 w1) c h w -> c (h1 h) (w1 v w)', w1=2, v=3)
             writer.add_image('mae_image', (img + 1) / 2, global_step=e)
-        
+
         ''' save model '''
         torch.save(model, args.model_path)

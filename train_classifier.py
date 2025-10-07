@@ -8,7 +8,7 @@ from torchvision.transforms import ToTensor, Compose, Normalize
 from tqdm import tqdm
 
 from model import *
-from utils import setup_seed
+from utils import CSVLogger, setup_seed
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -21,6 +21,8 @@ if __name__ == '__main__':
     parser.add_argument('--warmup_epoch', type=int, default=5)
     parser.add_argument('--pretrained_model_path', type=str, default=None)
     parser.add_argument('--output_model_path', type=str, default='vit-t-classifier-from_scratch.pt')
+    parser.add_argument("--csv_log", type=str, default="auto",
+                        help="Path to CSV file for epoch-level metrics.")
 
     args = parser.parse_args()
 
@@ -39,7 +41,7 @@ if __name__ == '__main__':
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     if args.pretrained_model_path is not None:
-        model = torch.load(args.pretrained_model_path, map_location='cpu')
+        model = torch.load(args.pretrained_model_path, map_location='cpu', weights_only=False)
         writer = SummaryWriter(os.path.join('logs', 'cifar10', 'pretrain-cls'))
     else:
         model = MAE_ViT()
@@ -51,10 +53,18 @@ if __name__ == '__main__':
 
     optim = torch.optim.AdamW(model.parameters(), lr=args.base_learning_rate * args.batch_size / 256, betas=(0.9, 0.999), weight_decay=args.weight_decay)
     lr_func = lambda epoch: min((epoch + 1) / (args.warmup_epoch + 1e-8), 0.5 * (math.cos(epoch / args.total_epoch * math.pi) + 1))
-    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_func, verbose=True)
+    lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_func)
 
+    run_tag = "pretrained" if args.pretrained_model_path else "scratch"
+    csv_path = args.csv_log.replace("metrics.csv", f"metrics_{run_tag}.csv")
+    csv_logger = CSVLogger(
+        csv_path,
+        fieldnames=["epoch", "train_loss", "train_acc", "val_loss", "val_acc", "lr", "from_pretrained"]
+    )
     best_val_acc = 0
     step_count = 0
+    train_loss_sum = 0.0
+    train_correct, train_count = 0, 0
     optim.zero_grad()
     for e in range(args.total_epoch):
         model.train()
@@ -71,8 +81,18 @@ if __name__ == '__main__':
             if step_count % steps_per_update == 0:
                 optim.step()
                 optim.zero_grad()
+
+            # accumulate for epoch metrics
+            train_loss_sum += loss.item() * img.size(0)
+            preds = logits.argmax(dim=1)
+            train_correct += (preds == label).sum().item()
+            train_count += img.size(0)
             losses.append(loss.item())
             acces.append(acc.item())
+
+        epoch_train_loss = train_loss_sum / train_count
+        epoch_train_acc = train_correct / train_count
+
         lr_scheduler.step()
         avg_train_loss = sum(losses) / len(losses)
         avg_train_acc = sum(acces) / len(acces)
@@ -92,11 +112,21 @@ if __name__ == '__main__':
                 acces.append(acc.item())
             avg_val_loss = sum(losses) / len(losses)
             avg_val_acc = sum(acces) / len(acces)
-            print(f'In epoch {e}, average validation loss is {avg_val_loss}, average validation acc is {avg_val_acc}.')  
+            print(f'In epoch {e}, average validation loss is {avg_val_loss}, average validation acc is {avg_val_acc}.')
+
+        csv_logger.log({
+            "epoch": e,
+            "train_loss": float(avg_train_loss),
+            "train_acc": float(avg_train_acc),
+            "val_loss": float(avg_val_loss),
+            "val_acc": float(avg_val_acc),
+            "lr": float(lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else optim.param_groups[0]["lr"]),
+            "from_pretrained": bool(args.pretrained_model_path),
+        })
 
         if avg_val_acc > best_val_acc:
             best_val_acc = avg_val_acc
-            print(f'saving best model with acc {best_val_acc} at {e} epoch!')       
+            print(f'saving best model with acc {best_val_acc} at {e} epoch!')
             torch.save(model, args.output_model_path)
 
         writer.add_scalars('cls/loss', {'train' : avg_train_loss, 'val' : avg_val_loss}, global_step=e)

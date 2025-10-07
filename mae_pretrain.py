@@ -1,4 +1,5 @@
 import os
+import time
 import argparse
 import math
 import torch
@@ -28,19 +29,29 @@ if __name__ == '__main__':
     parser.add_argument('--total_epoch', type=int, default=2000)
     parser.add_argument('--warmup_epoch', type=int, default=200)
     parser.add_argument('--model_path', type=str, default='vit-t-mae.pt')
-    parser.add_argument("--csv_log", type=str, default="auto",
-                        help="Path to CSV file for epoch-level metrics.")
-    parser.add_argument("--save_images_dir", type=str, default="logs/cifar10/mae-pretrain/images",
+    parser.add_argument('--output_root', type=str, default='logs_test/')
+    parser.add_argument("--csv_path", type=str, default="metrics.csv",
+                        help="CSV file name for epoch-level metrics.")
+    parser.add_argument("--save_images_dir", type=str, default="images/",
                     help="Directory to save reconstructed image grids.")
-    parser.add_argument("--save_images_n", type=int, default=8,
+    parser.add_argument("--save_images_n", type=int, default=24,
                         help="How many validation images to visualize/save each epoch.")
     parser.add_argument("--visualize_freq", type=int, default=10)  # 0 = off. also runs on last epoch
-    parser.add_argument("--pad", type=int, default=5)             # gutter (pixels) between the 3 tiles
+    parser.add_argument("--pad", type=int, default=3)             # gutter (pixels) between the 3 tiles
     parser.add_argument("--pad_value", type=float, default=1)
 
     args = parser.parse_args()
-    if args.save_images_dir:
-        os.makedirs(args.save_images_dir, exist_ok=True)
+
+    # Set up paths
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    output_dir      = os.path.join(args.output_root, "mae-pretrain", ts)
+    model_path      = os.path.join(output_dir, args.model_path)
+    csv_path         = os.path.join(output_dir, args.csv_path)
+    save_images_dir = os.path.join(output_dir, args.save_images_dir)
+    writer_dir      = os.path.join(output_dir, 'tensorboard')
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(save_images_dir, exist_ok=True)
+    os.makedirs(writer_dir, exist_ok=True)
 
     setup_seed(args.seed)
 
@@ -53,13 +64,8 @@ if __name__ == '__main__':
     train_dataset = torchvision.datasets.CIFAR10('data', train=True, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     val_dataset = torchvision.datasets.CIFAR10('data', train=False, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     dataloader = torch.utils.data.DataLoader(train_dataset, load_batch_size, shuffle=True, num_workers=4)
-    writer = SummaryWriter(os.path.join('logs', 'cifar10', 'mae-pretrain'))
-    if args.csv_log == "auto":
-        csv_log = os.path.join('logs', 'cifar10', 'mae-pretrain', 'metrics.csv')
-        os.makedirs(os.path.dirname(csv_log), exist_ok=True)
-    else:
-        csv_log = args.csv_log
-    csv_logger = CSVLogger(csv_log, fieldnames=["epoch", "train_loss", "lr", "mask_ratio"])
+    writer = SummaryWriter(writer_dir)
+    csv_logger = CSVLogger(csv_path, fieldnames=["epoch", "time_elapsed", "end_time", "start_time", "train_loss", "lr", "mask_ratio"])
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = MAE_ViT(mask_ratio=args.mask_ratio).to(device)
@@ -69,6 +75,8 @@ if __name__ == '__main__':
 
     step_count = 0
     optim.zero_grad()
+    tsStart = time.strftime("%Y%m%d-%H%M%S")
+    tStart = time.time()
     for e in range(args.total_epoch):
         model.train()
         losses = []
@@ -84,9 +92,14 @@ if __name__ == '__main__':
             losses.append(loss.item())
         lr_scheduler.step()
         avg_loss = sum(losses) / len(losses)
+        tsEnd = time.strftime("%Y%m%d-%H%M%S")
+        tEnd = time.time()
         writer.add_scalar('mae_loss', avg_loss, global_step=e)
         csv_logger.log({
             "epoch": e,
+            "start_time": tsStart,
+            "end_time": tsEnd,
+            "time_elapsed": tEnd - tStart,
             "train_loss": float(avg_loss),
             "lr": float(lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else optim.param_groups[0]["lr"]),
             "mask_ratio": float(args.mask_ratio),
@@ -98,6 +111,8 @@ if __name__ == '__main__':
         '''
         visualize = (args.visualize_freq > 0 and (e % args.visualize_freq == 0)) or (e == args.total_epoch - 1)
         if visualize:
+            save_images_dir_epoch = os.path.join(save_images_dir, f"epoch_{e:04d}")
+            os.makedirs(save_images_dir_epoch, exist_ok=True)
             model.eval()
             with torch.inference_mode():
                 n = args.save_images_n
@@ -107,6 +122,7 @@ if __name__ == '__main__':
                 masks = ensure_mask_channels(masks, val_imgs)
 
                 masked = val_imgs * (1 - masks)
+                masked = masked + masks * 0
                 recon  = preds * masks + val_imgs * (1 - masks)
 
                 # write n separate PNGs: each is [masked | recon | original] with spacing
@@ -121,7 +137,7 @@ if __name__ == '__main__':
                         tiles01, nrow=3, padding=args.pad, pad_value=args.pad_value
                     )  # [C, H, 3W + gutters]
 
-                    out_path = os.path.join(args.save_images_dir, f"epoch_{e:04d}_idx_{i:03d}.png")
+                    out_path = os.path.join(save_images_dir_epoch, f"epoch_{e:04d}_idx_{i:03d}.png")
                     torchvision.utils.save_image(grid, out_path)
 
                     # (optional) also push each to TensorBoard under a per-sample tag
@@ -130,4 +146,4 @@ if __name__ == '__main__':
         '''
         Save model
         '''
-        torch.save(model, args.model_path)
+        torch.save(model, model_path)

@@ -75,9 +75,9 @@ if __name__ == '__main__':
 
     step_count = 0
     optim.zero_grad()
-    tsStart = time.strftime("%Y%m%d-%H%M%S")
-    tStart = time.time()
     for e in range(args.total_epoch):
+        tsStart = time.strftime("%Y%m%d-%H%M%S")
+        tStart = time.time()
         model.train()
         losses = []
         for img, label in tqdm(iter(dataloader)):

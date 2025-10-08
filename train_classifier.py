@@ -1,6 +1,7 @@
 import os
 import argparse
 import math
+import time
 import torch
 import torchvision
 from torch.utils.tensorboard import SummaryWriter
@@ -19,12 +20,45 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=0.05)
     parser.add_argument('--total_epoch', type=int, default=100)
     parser.add_argument('--warmup_epoch', type=int, default=5)
+    parser.add_argument('--output_dir', type=str, default='logs_test/')
     parser.add_argument('--pretrained_model_path', type=str, default=None)
-    parser.add_argument('--output_model_path', type=str, default='vit-t-classifier-from_scratch.pt')
+    parser.add_argument('--output_model_path', type=str, default='auto')
     parser.add_argument("--csv_log", type=str, default="auto",
                         help="Path to CSV file for epoch-level metrics.")
 
     args = parser.parse_args()
+
+    # Set up paths
+    if args.output_model_path == 'auto':
+        if args.pretrained_model_path is not None:
+            folder = "pretrain-cls"
+            fn = "vit-t-clf-from_pretrained.pt"
+        else:
+            folder = "scratch-cls"
+            fn = "vit-t-clf-from_scratch.pt"
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        output_dir = os.path.join(args.output_dir, folder, ts)
+        output_model_path = os.path.join(output_dir, fn)
+    else:
+        output_model_path = args.output_model_path
+        output_dir = os.path.dirname(output_model_path)
+    os.makedirs(output_dir, exist_ok=True)
+
+    if args.csv_log == 'auto':
+        csv_path = os.path.join(output_dir, "metrics.csv")
+    else:
+        csv_path = args.csv_log
+    if args.pretrained_model_path is not None:
+        assert os.path.exists(args.pretrained_model_path), f"Pretrained model path {args.pretrained_model_path} does not exist!"
+        assert "mae-pretrain" in args.pretrained_model_path, "The pretrained model seems not from mae_pretrain.py"
+        print(f"Training classifier using pretrained weights from {args.pretrained_model_path}")
+    else:
+        print("Training classifier from scratch, without loading any pretrained weights.")
+        assert "pretrain-cls" not in output_model_path, "Output model path seems incorrect for training from scratch, please check."
+
+    print(f"Output directory is {output_dir}")
+    print(f"Output model will be saved to {output_model_path}")
+    print(f"CSV log will be saved to {csv_path}")
 
     setup_seed(args.seed)
 
@@ -42,10 +76,10 @@ if __name__ == '__main__':
 
     if args.pretrained_model_path is not None:
         model = torch.load(args.pretrained_model_path, map_location='cpu', weights_only=False)
-        writer = SummaryWriter(os.path.join('logs', 'cifar10', 'pretrain-cls'))
+        writer = SummaryWriter(output_dir)
     else:
         model = MAE_ViT()
-        writer = SummaryWriter(os.path.join('logs', 'cifar10', 'scratch-cls'))
+        writer = SummaryWriter(output_dir)
     model = ViT_Classifier(model.encoder, num_classes=10).to(device)
 
     loss_fn = torch.nn.CrossEntropyLoss()
@@ -55,11 +89,13 @@ if __name__ == '__main__':
     lr_func = lambda epoch: min((epoch + 1) / (args.warmup_epoch + 1e-8), 0.5 * (math.cos(epoch / args.total_epoch * math.pi) + 1))
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_func)
 
-    run_tag = "pretrained" if args.pretrained_model_path else "scratch"
-    csv_path = args.csv_log.replace("metrics.csv", f"metrics_{run_tag}.csv")
     csv_logger = CSVLogger(
         csv_path,
-        fieldnames=["epoch", "train_loss", "train_acc", "val_loss", "val_acc", "lr", "from_pretrained"]
+        fieldnames=[
+            "epoch", "start_time", "end_time", "time_elapsed",
+            "train_loss", "train_acc", "val_loss", "val_acc",
+            "lr", "from_pretrained"
+        ]
     )
     best_val_acc = 0
     step_count = 0
@@ -67,6 +103,8 @@ if __name__ == '__main__':
     train_correct, train_count = 0, 0
     optim.zero_grad()
     for e in range(args.total_epoch):
+        tsStart = time.strftime("%Y%m%d-%H%M%S")
+        tStart = time.time()
         model.train()
         losses = []
         acces = []
@@ -114,20 +152,24 @@ if __name__ == '__main__':
             avg_val_acc = sum(acces) / len(acces)
             print(f'In epoch {e}, average validation loss is {avg_val_loss}, average validation acc is {avg_val_acc}.')
 
+        if avg_val_acc > best_val_acc:
+            best_val_acc = avg_val_acc
+            print(f'saving best model with acc {best_val_acc} at {e} epoch!')
+            torch.save(model, output_model_path)
+
+        tsEnd = time.strftime("%Y%m%d-%H%M%S")
+        tEnd = time.time()
+        writer.add_scalars('cls/loss', {'train' : avg_train_loss, 'val' : avg_val_loss}, global_step=e)
+        writer.add_scalars('cls/acc', {'train' : avg_train_acc, 'val' : avg_val_acc}, global_step=e)
         csv_logger.log({
             "epoch": e,
+            "start_time": tsStart,
+            "end_time": tsEnd,
+            "time_elapsed": tEnd - tStart,
             "train_loss": float(avg_train_loss),
             "train_acc": float(avg_train_acc),
             "val_loss": float(avg_val_loss),
             "val_acc": float(avg_val_acc),
             "lr": float(lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else optim.param_groups[0]["lr"]),
-            "from_pretrained": bool(args.pretrained_model_path),
+            "from_pretrained": args.pretrained_model_path,
         })
-
-        if avg_val_acc > best_val_acc:
-            best_val_acc = avg_val_acc
-            print(f'saving best model with acc {best_val_acc} at {e} epoch!')
-            torch.save(model, args.output_model_path)
-
-        writer.add_scalars('cls/loss', {'train' : avg_train_loss, 'val' : avg_val_loss}, global_step=e)
-        writer.add_scalars('cls/acc', {'train' : avg_train_acc, 'val' : avg_val_acc}, global_step=e)

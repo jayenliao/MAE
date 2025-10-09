@@ -29,7 +29,7 @@ if __name__ == '__main__':
     parser.add_argument('--total_epoch', type=int, default=2000)
     parser.add_argument('--warmup_epoch', type=int, default=200)
     parser.add_argument('--model_path', type=str, default='vit-t-mae.pt')
-    parser.add_argument('--output_root', type=str, default='logs_test/')
+    parser.add_argument('--output_root', type=str, default='outputs/')
     parser.add_argument("--csv_path", type=str, default="metrics.csv",
                         help="CSV file name for epoch-level metrics.")
     parser.add_argument("--save_images_dir", type=str, default="images/",

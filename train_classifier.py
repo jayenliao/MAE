@@ -20,7 +20,8 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=0.05)
     parser.add_argument('--total_epoch', type=int, default=100)
     parser.add_argument('--warmup_epoch', type=int, default=5)
-    parser.add_argument('--output_dir', type=str, default='outputs/')
+    parser.add_argument('--output_root', type=str, default='outputs/')
+    parser.add_argument('--exp_name', type=str, default='exp_test')
     parser.add_argument('--pretrained_model_path', type=str, default=None)
     parser.add_argument('--output_model_path', type=str, default='auto')
     parser.add_argument("--csv_log", type=str, default="auto",
@@ -36,8 +37,7 @@ if __name__ == '__main__':
         else:
             folder = "scratch-cls"
             fn = "vit-t-clf-from_scratch.pt"
-        ts = time.strftime("%Y%m%d-%H%M%S")
-        output_dir = os.path.join(args.output_dir, folder, ts)
+        output_dir = os.path.join(args.output_root, args.exp_name, folder)
         output_model_path = os.path.join(output_dir, fn)
     else:
         output_model_path = args.output_model_path

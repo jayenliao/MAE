@@ -28,9 +28,10 @@ if __name__ == '__main__':
     parser.add_argument('--mask_ratio', type=float, default=0.75)
     parser.add_argument('--total_epoch', type=int, default=2000)
     parser.add_argument('--warmup_epoch', type=int, default=200)
-    parser.add_argument('--model_path', type=str, default='vit-t-mae.pt')
     parser.add_argument('--output_root', type=str, default='outputs/')
-    parser.add_argument("--csv_path", type=str, default="metrics.csv",
+    parser.add_argument('--exp_name', type=str, default='exp_test')
+    parser.add_argument('--model_fn', type=str, default='vit-t-mae.pt')
+    parser.add_argument("--csv_fn", type=str, default="metrics.csv",
                         help="CSV file name for epoch-level metrics.")
     parser.add_argument("--save_images_dir", type=str, default="images/",
                     help="Directory to save reconstructed image grids.")
@@ -43,10 +44,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Set up paths
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    output_dir      = os.path.join(args.output_root, "mae-pretrain", ts)
-    model_path      = os.path.join(output_dir, args.model_path)
-    csv_path         = os.path.join(output_dir, args.csv_path)
+    output_dir      = os.path.join(args.output_root, args.exp_name, "mae-pretrain")
+    model_path      = os.path.join(output_dir, args.model_fn)
+    csv_path        = os.path.join(output_dir, args.csv_fn)
     save_images_dir = os.path.join(output_dir, args.save_images_dir)
     writer_dir      = os.path.join(output_dir, 'tensorboard')
     os.makedirs(output_dir, exist_ok=True)
@@ -65,7 +65,10 @@ if __name__ == '__main__':
     val_dataset = torchvision.datasets.CIFAR10('data', train=False, download=True, transform=Compose([ToTensor(), Normalize(0.5, 0.5)]))
     dataloader = torch.utils.data.DataLoader(train_dataset, load_batch_size, shuffle=True, num_workers=4)
     writer = SummaryWriter(writer_dir)
-    csv_logger = CSVLogger(csv_path, fieldnames=["epoch", "time_elapsed", "end_time", "start_time", "train_loss", "lr", "mask_ratio"])
+    csv_logger = CSVLogger(
+        csv_path,
+        fieldnames=["epoch", "time_elapsed", "end_time", "start_time", "train_loss", "lr", "mask_ratio"]
+    )
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = MAE_ViT(mask_ratio=args.mask_ratio).to(device)
@@ -116,7 +119,6 @@ if __name__ == '__main__':
             model.eval()
             with torch.inference_mode():
                 n = args.save_images_n
-                # one forward for all n images
                 val_imgs = torch.stack([val_dataset[i][0] for i in range(n)]).to(device)  # [n,C,H,W]
                 preds, masks = model(val_imgs)  # [n,C,H,W], [n,1/H,W] depending on impl
                 masks = ensure_mask_channels(masks, val_imgs)
@@ -140,9 +142,7 @@ if __name__ == '__main__':
                     out_path = os.path.join(save_images_dir_epoch, f"epoch_{e:04d}_idx_{i:03d}.png")
                     torchvision.utils.save_image(grid, out_path)
 
-                    # (optional) also push each to TensorBoard under a per-sample tag
-                    writer.add_image(f"mae_single/{i:03d}", grid, global_step=e)
-
+                    # writer.add_image(f"mae_single/{i:03d}", grid, global_step=e)
         '''
         Save model
         '''

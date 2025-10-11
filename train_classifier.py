@@ -20,6 +20,8 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=0.05)
     parser.add_argument('--total_epoch', type=int, default=100)
     parser.add_argument('--warmup_epoch', type=int, default=5)
+    parser.add_argument('--linear_probe', action='store_true',
+                        help='Freeze encoder and train only a linear head')
     parser.add_argument('--output_root', type=str, default='outputs/')
     parser.add_argument('--exp_name', type=str, default='exp_test')
     parser.add_argument('--pretrained_model_path', type=str, default=None)
@@ -85,7 +87,20 @@ if __name__ == '__main__':
     loss_fn = torch.nn.CrossEntropyLoss()
     acc_fn = lambda logit, label: torch.mean((logit.argmax(dim=-1) == label).float())
 
-    optim = torch.optim.AdamW(model.parameters(), lr=args.base_learning_rate * args.batch_size / 256, betas=(0.9, 0.999), weight_decay=args.weight_decay)
+    if args.linear_probe:
+        for n, p in model.named_parameters():
+            if not n.startswith('head.'):
+                p.requires_grad = False
+        params = model.head.parameters()
+        lr = max(1e-3, args.base_learning_rate) * args.batch_size / 256
+        weight_decay = 0.0 # close to 0 for linear probe
+        print("Training with linear probe: only the linear head is trainable.")
+    else:
+        params = model.parameters()
+        lr = args.base_learning_rate * args.batch_size / 256
+        weight_decay = args.weight_decay
+
+    optim = torch.optim.AdamW(params, lr=lr, weight_decay=weight_decay, betas=(0.9, 0.999))
     lr_func = lambda epoch: min((epoch + 1) / (args.warmup_epoch + 1e-8), 0.5 * (math.cos(epoch / args.total_epoch * math.pi) + 1))
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_func)
 
@@ -94,7 +109,7 @@ if __name__ == '__main__':
         fieldnames=[
             "epoch", "start_time", "end_time", "time_elapsed",
             "train_loss", "train_acc", "val_loss", "val_acc",
-            "lr", "from_pretrained"
+            "lr", "linear_probe", "from_pretrained"
         ]
     )
     best_val_acc = 0
@@ -171,5 +186,6 @@ if __name__ == '__main__':
             "val_loss": float(avg_val_loss),
             "val_acc": float(avg_val_acc),
             "lr": float(lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else optim.param_groups[0]["lr"]),
+            "linear_probe": bool(args.linear_probe),
             "from_pretrained": args.pretrained_model_path,
         })

@@ -78,7 +78,7 @@ if __name__ == '__main__':
 
     step_count = 0
     optim.zero_grad()
-    for e in range(args.total_epoch):
+    for e in range(1, args.total_epoch + 1):
         tsStart = time.strftime("%Y%m%d-%H%M%S")
         tStart = time.time()
         model.train()

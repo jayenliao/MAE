@@ -34,17 +34,18 @@ if __name__ == '__main__':
     # Set up paths
     if args.output_model_path == 'auto':
         if args.pretrained_model_path is not None:
-            folder = "pretrain-cls"
+            folder = "pretrain-cls" if not args.linear_probe else "pretrain-cls-lin"
             fn = "vit-t-clf-from_pretrained.pt"
         else:
             folder = "scratch-cls"
             fn = "vit-t-clf-from_scratch.pt"
         output_dir = os.path.join(args.output_root, args.exp_name, folder)
         output_model_path = os.path.join(output_dir, fn)
+        os.makedirs(output_dir, exist_ok=True)
     else:
         output_model_path = args.output_model_path
         output_dir = os.path.dirname(output_model_path)
-    os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=False)
 
     if args.csv_log == 'auto':
         csv_path = os.path.join(output_dir, "metrics.csv")

@@ -80,18 +80,21 @@ class MAE_Decoder(torch.nn.Module):
     def __init__(self,
                  image_size=32,
                  patch_size=2,
-                 emb_dim=192,
+                 emb_dim=192, # encoder dim by default
+                 decoder_dim=192, # vary this for ablations
                  num_layer=4,
                  num_head=3,
                  ) -> None:
         super().__init__()
+        if decoder_dim != emb_dim:
+            self.enc2dec = torch.nn.Linear(emb_dim, decoder_dim)
+        else: # skip this layer if the dim is the same
+            self.enc2dec = torch.nn.Identity()
+        self.mask_token = torch.nn.Parameter(torch.zeros(1, 1, decoder_dim))
+        self.pos_embedding = torch.nn.Parameter(torch.zeros((image_size // patch_size) ** 2 + 1, 1, decoder_dim))
+        self.transformer = torch.nn.Sequential(*[Block(decoder_dim, num_head) for _ in range(num_layer)])
 
-        self.mask_token = torch.nn.Parameter(torch.zeros(1, 1, emb_dim))
-        self.pos_embedding = torch.nn.Parameter(torch.zeros((image_size // patch_size) ** 2 + 1, 1, emb_dim))
-
-        self.transformer = torch.nn.Sequential(*[Block(emb_dim, num_head) for _ in range(num_layer)])
-
-        self.head = torch.nn.Linear(emb_dim, 3 * patch_size ** 2)
+        self.head = torch.nn.Linear(decoder_dim, 3 * patch_size ** 2)
         self.patch2img = Rearrange('(h w) b (c p1 p2) -> b c (h p1) (w p2)', p1=patch_size, p2=patch_size, h=image_size//patch_size)
 
         self.init_weight()
@@ -105,6 +108,7 @@ class MAE_Decoder(torch.nn.Module):
         backward_indexes = torch.cat([torch.zeros(1, backward_indexes.shape[1]).to(backward_indexes), backward_indexes + 1], dim=0)
         features = torch.cat([features, self.mask_token.expand(backward_indexes.shape[0] - features.shape[0], features.shape[1], -1)], dim=0)
         features = take_indexes(features, backward_indexes)
+        features = self.enc2dec(features)   # map to decoder dim if needed
         features = features + self.pos_embedding
 
         features = rearrange(features, 't b c -> b t c')
@@ -128,6 +132,7 @@ class MAE_ViT(torch.nn.Module):
                  emb_dim=192,
                  encoder_layer=12,
                  encoder_head=3,
+                 decoder_dim=192,
                  decoder_layer=4,
                  decoder_head=3,
                  mask_ratio=0.75,
@@ -135,7 +140,7 @@ class MAE_ViT(torch.nn.Module):
         super().__init__()
 
         self.encoder = MAE_Encoder(image_size, patch_size, emb_dim, encoder_layer, encoder_head, mask_ratio)
-        self.decoder = MAE_Decoder(image_size, patch_size, emb_dim, decoder_layer, decoder_head)
+        self.decoder = MAE_Decoder(image_size, patch_size, emb_dim, decoder_dim, decoder_layer, decoder_head)
 
     def forward(self, img):
         features, backward_indexes = self.encoder(img)

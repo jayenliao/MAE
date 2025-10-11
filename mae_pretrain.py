@@ -33,6 +33,8 @@ if __name__ == '__main__':
     parser.add_argument('--model_fn', type=str, default='vit-t-mae.pt')
     parser.add_argument("--csv_fn", type=str, default="metrics.csv",
                         help="CSV file name for epoch-level metrics.")
+
+    # Visualization
     parser.add_argument("--save_images_dir", type=str, default="images/",
                     help="Directory to save reconstructed image grids.")
     parser.add_argument("--save_images_n", type=int, default=24,
@@ -40,6 +42,14 @@ if __name__ == '__main__':
     parser.add_argument("--visualize_freq", type=int, default=10)  # 0 = off. also runs on last epoch
     parser.add_argument("--pad", type=int, default=3)             # gutter (pixels) between the 3 tiles
     parser.add_argument("--pad_value", type=float, default=1)
+
+    # Ablations
+    parser.add_argument('--decoder_layers', type=int, default=4)
+    parser.add_argument('--decoder_dim', type=int, default=192, help='decoder width; paper often uses 512')
+    parser.add_argument('--enc_mask_token', action='store_true',
+                        help='use mask tokens in the encoder (Table 1c ON)')
+    parser.add_argument('--mask_strategy', type=str, default='random',
+                        choices=['random','block','grid'], help='Table 1f')
 
     args = parser.parse_args()
 
@@ -67,11 +77,21 @@ if __name__ == '__main__':
     writer = SummaryWriter(writer_dir)
     csv_logger = CSVLogger(
         csv_path,
-        fieldnames=["epoch", "time_elapsed", "end_time", "start_time", "train_loss", "lr", "mask_ratio"]
+        fieldnames=[
+            "epoch", "time_elapsed", "end_time", "start_time",
+            "train_loss", "lr",
+            "decoder_layers", "decoder_dim",
+            "mask_strategy", "mask_ratio", "enc_mask_token",
+        ],
     )
-
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = MAE_ViT(mask_ratio=args.mask_ratio).to(device)
+    model = MAE_ViT(
+        mask_ratio=args.mask_ratio,
+        decoder_layers=args.decoder_layers,
+        decoder_dim=args.decoder_dim,
+        enc_mask_token=args.enc_mask_token,
+        mask_strategy=args.mask_strategy
+    ).to(device)
     optim = torch.optim.AdamW(model.parameters(), lr=args.base_learning_rate * args.batch_size / 256, betas=(0.9, 0.95), weight_decay=args.weight_decay)
     lr_func = lambda epoch: min((epoch + 1) / (args.warmup_epoch + 1e-8), 0.5 * (math.cos(epoch / args.total_epoch * math.pi) + 1))
     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optim, lr_lambda=lr_func)
@@ -105,7 +125,11 @@ if __name__ == '__main__':
             "time_elapsed": tEnd - tStart,
             "train_loss": float(avg_loss),
             "lr": float(lr_scheduler.get_last_lr()[0] if lr_scheduler is not None else optim.param_groups[0]["lr"]),
+            "decoder_layers": args.decoder_layers,
+            "decoder_dim": args.decoder_dim,
+            "mask_strategy": args.mask_strategy,
             "mask_ratio": float(args.mask_ratio),
+            "enc_mask_token": bool(args.enc_mask_token),
         })
         print(f'In epoch {e}, average training loss is {avg_loss}.')
 

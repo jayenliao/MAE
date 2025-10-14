@@ -39,7 +39,7 @@ if __name__ == '__main__':
                     help="Directory to save reconstructed image grids.")
     parser.add_argument("--save_images_n", type=int, default=24,
                         help="How many validation images to visualize/save each epoch.")
-    parser.add_argument("--visualize_freq", type=int, default=10)  # 0 = off. also runs on last epoch
+    parser.add_argument("--visualize_freq", type=int, default=50)  # 0 = off. also runs on last epoch
     parser.add_argument("--pad", type=int, default=3)             # gutter (pixels) between the 3 tiles
     parser.add_argument("--pad_value", type=float, default=1)
 
@@ -59,9 +59,9 @@ if __name__ == '__main__':
     csv_path        = os.path.join(output_dir, args.csv_fn)
     save_images_dir = os.path.join(output_dir, args.save_images_dir)
     writer_dir      = os.path.join(output_dir, 'tensorboard')
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(save_images_dir, exist_ok=True)
-    os.makedirs(writer_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=False)
+    os.makedirs(save_images_dir, exist_ok=False)
+    os.makedirs(writer_dir, exist_ok=False)
 
     setup_seed(args.seed)
 

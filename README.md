@@ -65,7 +65,7 @@ outputs/<EXP_NAME>/
     outputs/main_exp/mae-pretrain/vit-t-mae.pt
     ```
 
-- Version of 600 epochs
+- Version of 150 epochs
 
     ```bash
     bash commands/mae_pretrain_150.sh

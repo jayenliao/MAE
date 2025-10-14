@@ -1,6 +1,6 @@
 # Multimodal AI Assignment 1 - Masked Autoencoders
 
-- Name: Jay Chiehen Liao
+- Name: Jay Chiehen Liao (廖傑恩)
 - ID: R13922210
 - E-mail: r13922210@ntu.edu.tw
 
@@ -10,17 +10,17 @@ The assignment aims to reproduce [*KaiMing He el.al. Masked Autoencoders Are Sca
 
 ## Envrionment
 
-The project was implemented by Python programming and conducted on 
+The project was implemented by Python programming and conducted on
 
 screenshots
 
-For Python package
+Required Python packages are listed in `requirements.txt`
 
 ## Files
 
-- `requirements.txt` pins the environment: torch==1.10.1, torchvision==0.11.2, timm==0.4.12, plus tensorboard, einops, tqdm.
+- `requirements.txt` list required Python packages.
 
-readme.md — states the replication goal (MAE pretraining improves supervised fine-tuning on CIFAR-10), installation, run commands, and an example result table/log links.
+readme.md (this file) states the replication goal (MAE pretraining improves supervised fine-tuning on CIFAR-10), installation, run commands, and an example result table/log links.
 
 model.py — defines the MAE components:
 
@@ -39,3 +39,22 @@ train_classifier.py — supervised fine-tuning on CIFAR-10 either from scratch o
 utils.py — deterministic training seed setup across PyTorch/CUDA/NumPy. (Important for fair ablations.)
 
 Dataset: both scripts use CIFAR-10 train/val splits from torchvision.datasets.CIFAR10
+
+## Instructions for Replication
+
+- Make sure the environment is consistant and install required Python packages.
+    ```bash
+    pip3 install -r requirements.txt
+    ```
+
+### Main Experiments
+
+- MAE pretraining
+
+- Classification without MAE pretraining
+
+- Classification with MAE pretraining
+
+### Ablation Study
+
+## Glance of Results

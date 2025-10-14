@@ -4,57 +4,182 @@
 - ID: R13922210
 - E-mail: r13922210@ntu.edu.tw
 
-## Description
+This repo reproduces key findings from **Masked Autoencoders Are Scalable Vision Learners (MAE)** on CIFAR-10: self-supervised pretraining improves downstream classification versus training from scratch, and we studied how **decoder depth** and **decoder width** affect MAE pretraining and downstream results.
 
-The assignment aims to reproduce [*KaiMing He el.al. Masked Autoencoders Are Scalable Vision Learners*](https://openaccess.thecvf.com/content/CVPR2022/papers/He_Masked_Autoencoders_Are_Scalable_Vision_Learners_CVPR_2022_paper.pdf7) based on github user [IcarusWizard's code base](https://github.com/IcarusWizard/MAE).
+- Code is adapted from a simplified MAE implementation using ViT blocks from `timm`.
+- Dataset is CIFAR-10 (auto-downloaded via `torchvision`).
 
-## Envrionment
+## Environment
 
-The project was implemented by Python programming and conducted on
+- Install required packages listed in `requirements.txt`.
 
-screenshots
+- You may create a conda env:
 
-Required Python packages are listed in `requirements.txt`
-
-## Files
-
-- `requirements.txt` list required Python packages.
-
-readme.md (this file) states the replication goal (MAE pretraining improves supervised fine-tuning on CIFAR-10), installation, run commands, and an example result table/log links.
-
-model.py — defines the MAE components:
-
-MAE_Encoder: patchify (conv), add positional embeddings, random patch shuffle/masking, ViT blocks, LN; returns features and unshuffle indices.
-
-MAE_Decoder: adds mask tokens & positional embeddings, small ViT, linear head to pixels, reshapes patches→image, and builds a mask map (1 on masked areas).
-
-MAE_ViT: wires encoder+decoder; forward returns (reconstructed_img, mask).
-
-ViT_Classifier: reuses the pretrained encoder (cls token, pos embedding, patchify, transformer, LN) and adds a linear head for 10 classes.
-
-mae_pretrain.py — self-supervised pretraining on CIFAR-10 with default 2000 epochs, 75% mask, AdamW + warmup+cosine; logs MSE@masked loss and reconstruction images to TensorBoard; saves vit-t-mae.pt.
-
-train_classifier.py — supervised fine-tuning on CIFAR-10 either from scratch or from the pretrained encoder, with TensorBoard curves for loss/accuracy and model checkpointing at best val acc.
-
-utils.py — deterministic training seed setup across PyTorch/CUDA/NumPy. (Important for fair ablations.)
-
-Dataset: both scripts use CIFAR-10 train/val splits from torchvision.datasets.CIFAR10
-
-## Instructions for Replication
-
-- Make sure the environment is consistant and install required Python packages.
     ```bash
-    pip3 install -r requirements.txt
+    conda create --name mae python=3.12
+    conda activate mae
+    pip install -r requirements.txt
     ```
+
+## Repo Structure
+
+* `model.py` defines MAE encoder/decoder and a `ViT_Classifier` built on the pretrained encoder.  Encoder masks patches, the decoder reconstructs. The classifier reuses encoder weights and adds a linear head.
+
+* `mae_pretrain.py` self-supervises pretraining on CIFAR-10 with cosine-decayed LR, warmup, random masking. The script also logs loss to a csv file and periodically saves image grids under `images/epoch_XXXX/`.
+
+* `train_classifier.py` trains a classifier on CIFAR-10, either from scratch or loading a pretrained encoder. It supports **linear probe** (with `--linear_probe`) or full fine-tuning.
+
+* `visualize_pred.py` produces side-by-side prediction figures for pretrained vs. scratch classifiers on the same set of test images.
+
+* `utils.py`: seeds and a tiny CSV logger.
+
+Outputs are written under:
+
+```
+outputs/<EXP_NAME>/
+  mae-pretrain/     # pretraining (checkpoint, images/, tensorboard/)
+  pretrain-cls/     # classifier from pretrained encoder
+  pretrain-cls-lin/ # linear probe from pretrained encoder
+  scratch-cls/      # classifier trained from scratch
+```
+
+## Usage
 
 ### Main Experiments
 
-- MAE pretraining
+#### 1. MAE pretraining
 
-- Classification without MAE pretraining
+- Version of 600 epochs
 
-- Classification with MAE pretraining
+    You may modify the shell script to adjust the number of epochs.
 
-### Ablation Study
+    ```bash
+    bash commands/mae_pretrain.sh
+    ```
 
-## Glance of Results
+    This writes the checkpoint to:
+
+    ```
+    outputs/main_exp/mae-pretrain/vit-t-mae.pt
+    ```
+
+- Version of 600 epochs
+
+    ```bash
+    bash commands/mae_pretrain_150.sh
+    ```
+
+    This writes the checkpoint to:
+
+    ```
+    outputs/main_exp_150_50/mae-pretrain/vit-t-mae.pt
+    ```
+
+
+#### 2-1. Classification from Scratch (without MAE pretraining)
+
+- Version of 600-100 epochs
+
+    ```bash
+    bash commands/scratch_cls.sh
+    ```
+
+- Version of 150-50 epochs
+
+    ```bash
+    bash commands/scratch_cls_50.sh
+    ```
+
+#### 2-2. Classification with MAE Pretraining (Fine-tuning)
+
+- Version of 600-100 epochs
+
+    ```bash
+    bash commands/pretrain_cls.sh
+    ```
+
+- Version of 150-50 epochs
+
+    ```bash
+    bash commands/pretrain_cls_50.sh
+    ```
+
+#### 3. Visualize Predictions (Pretrained vs. Scratch)
+
+Before running, please ensure the main experiment (`main_exp`) has completed.
+
+```bash
+bash visualize_pred.sh
+```
+
+### Ablations
+
+This repo explores **decoder depth** and **decoder width** during MAE pretraining:
+
+#### Decoder depth
+
+`--decoder_layer {2,(4),6,8}`, where `depth=4` is the default setting.
+
+1. MAE Pretraining
+
+    ```bash
+    bash commands/mae_pretrain_depth.sh
+    ```
+
+2. Fine-tuning. Before running the following commands, ensure `commands/mae_pretrain_depth.sh` and experiment `main_exp_150_50` have been completed.
+
+    ```bash
+    bash commands/ft_depth.sh
+    bash commands/ft_default_d4_w192.sh
+    ```
+
+3. Linear probing. Before running the following commands, ensure `commands/mae_pretrain_depth.sh` and experiment `main_exp_150_50` have been completed.
+
+    ```bash
+    bash commands/lin_depth.sh
+    bash commands/lin_default_d4_w192.sh
+    ```
+
+#### Decoder width
+
+`--decoder_dim {64,128,(192),256,512}`, where `decoder_dim=192` is the default setting.
+
+1. MAE Pretraining
+
+    ```bash
+    bash commands/mae_pretrain_width.sh
+    ```
+
+2. Fine-tuning. Before running the following commands. Before running the following commands, ensure `commands/mae_pretrain_width.sh` has been completed.
+
+    ```bash
+    bash commands/ft_width.sh
+    ```
+
+3. Linear probing. Before running the following commands. Before running the following commands, ensure `commands/mae_pretrain_width.sh` has been completed.
+
+    ```bash
+    bash commands/lin_width.sh
+    ```
+
+### Getting result (accuracy scores, loss curves)
+
+- CSV logs: per-epoch metrics are written as `metrics.csv` in each run folder.
+- Please run all cells in `metrics.ipynb` to get accuracy scores and training loss curves. Note that you may need to change the file paths if you modify the shell scripts mentioned above.
+
+## Reproducibility
+
+Set `--seed` (default `42`). CuDNN is set to deterministic.
+
+## Known Issues (and how to avoid them)
+
+- Re-running with the same `--exp_name` for pretraining will error on existing directories. Change `--exp_name` or delete the old folder.
+
+- Path assertion: the classifier asserts the pretrained path contains `mae-pretrain`. Use the generated path structure or relax the assertion if you prefer.
+
+## References
+
+- He, Kaiming, et al. “Masked Autoencoders Are Scalable Vision Learners.” *CVPR* (2022).
+
+- Krizhevsky, Alex. “Learning Multiple Layers of Features from Tiny Images.” *Tech Report*, 2009 (CIFAR-10).
+

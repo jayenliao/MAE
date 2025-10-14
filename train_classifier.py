@@ -136,7 +136,6 @@ if __name__ == '__main__':
                 optim.step()
                 optim.zero_grad()
 
-            # accumulate for epoch metrics
             train_loss_sum += loss.item() * img.size(0)
             preds = logits.argmax(dim=1)
             train_correct += (preds == label).sum().item()

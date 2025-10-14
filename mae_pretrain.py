@@ -129,7 +129,7 @@ if __name__ == '__main__':
         '''
         Visualize + save the first N predicted images on val dataset
         '''
-        visualize = (args.visualize_freq > 0 and (e % args.visualize_freq == 0)) or (e == args.total_epoch - 1)
+        visualize = (args.visualize_freq > 0 and (e % args.visualize_freq == 0)) or (e == args.total_epoch)
         if visualize:
             save_images_dir_epoch = os.path.join(save_images_dir, f"epoch_{e:04d}")
             os.makedirs(save_images_dir_epoch, exist_ok=True)
@@ -137,7 +137,7 @@ if __name__ == '__main__':
             with torch.inference_mode():
                 n = args.save_images_n
                 val_imgs = torch.stack([val_dataset[i][0] for i in range(n)]).to(device)  # [n,C,H,W]
-                preds, masks = model(val_imgs) 
+                preds, masks = model(val_imgs)
                 masks = ensure_mask_channels(masks, val_imgs)
 
                 masked = val_imgs * (1 - masks)

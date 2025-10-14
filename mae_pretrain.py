@@ -40,16 +40,12 @@ if __name__ == '__main__':
     parser.add_argument("--save_images_n", type=int, default=24,
                         help="How many validation images to visualize/save each epoch.")
     parser.add_argument("--visualize_freq", type=int, default=50)  # 0 = off. also runs on last epoch
-    parser.add_argument("--pad", type=int, default=3)             # gutter (pixels) between the 3 tiles
+    parser.add_argument("--pad", type=int, default=3)
     parser.add_argument("--pad_value", type=float, default=1)
 
     # Ablations
     parser.add_argument('--decoder_layer', type=int, default=4)
     parser.add_argument('--decoder_dim', type=int, default=192, help='decoder width; paper often uses 512')
-    # parser.add_argument('--enc_mask_token', action='store_true',
-    #                     help='use mask tokens in the encoder (Table 1c ON)')
-    # parser.add_argument('--mask_strategy', type=str, default='random',
-    #                     choices=['random','block','grid'], help='Table 1f')
 
     args = parser.parse_args()
 
@@ -141,7 +137,7 @@ if __name__ == '__main__':
             with torch.inference_mode():
                 n = args.save_images_n
                 val_imgs = torch.stack([val_dataset[i][0] for i in range(n)]).to(device)  # [n,C,H,W]
-                preds, masks = model(val_imgs)  # [n,C,H,W], [n,1/H,W] depending on impl
+                preds, masks = model(val_imgs) 
                 masks = ensure_mask_channels(masks, val_imgs)
 
                 masked = val_imgs * (1 - masks)

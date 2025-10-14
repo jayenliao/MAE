@@ -80,8 +80,8 @@ class MAE_Decoder(torch.nn.Module):
     def __init__(self,
                  image_size=32,
                  patch_size=2,
-                 emb_dim=192, # encoder dim by default
-                 decoder_dim=192, # vary this for ablations
+                 emb_dim=192,
+                 decoder_dim=192,
                  num_layer=4,
                  num_head=3,
                  ) -> None:
@@ -109,7 +109,7 @@ class MAE_Decoder(torch.nn.Module):
     def forward(self, features, backward_indexes):
         T = features.shape[0]
         backward_indexes = torch.cat([torch.zeros(1, backward_indexes.shape[1]).to(backward_indexes), backward_indexes + 1], dim=0)
-        features = self.enc2dec(features)   # map to decoder dim if needed
+        features = self.enc2dec(features)   # map to decoder dim
         features = torch.cat([features, self.mask_token.expand(backward_indexes.shape[0] - features.shape[0], features.shape[1], -1)], dim=0)
         features = take_indexes(features, backward_indexes)
         features = features + self.pos_embedding
@@ -117,7 +117,7 @@ class MAE_Decoder(torch.nn.Module):
         features = rearrange(features, 't b c -> b t c')
         features = self.transformer(features)
         features = rearrange(features, 'b t c -> t b c')
-        features = features[1:] # remove global feature
+        features = features[1:] 
 
         patches = self.head(features)
         mask = torch.zeros_like(patches)

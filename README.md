@@ -23,15 +23,17 @@ This repo reproduces key findings from **Masked Autoencoders Are Scalable Vision
 
 ## Repo Structure
 
-* `model.py` defines MAE encoder/decoder and a `ViT_Classifier` built on the pretrained encoder.  Encoder masks patches, the decoder reconstructs. The classifier reuses encoder weights and adds a linear head.
+- `model.py` defines MAE encoder/decoder and a `ViT_Classifier` built on the pretrained encoder.  Encoder masks patches, the decoder reconstructs. The classifier reuses encoder weights and adds a linear head.
 
-* `mae_pretrain.py` self-supervises pretraining on CIFAR-10 with cosine-decayed LR, warmup, random masking. The script also logs loss to a csv file and periodically saves image grids under `images/epoch_XXXX/`.
+- `mae_pretrain.py` self-supervises pretraining on CIFAR-10 with cosine-decayed LR, warmup, random masking. The script also logs loss to a csv file and periodically saves image grids under `images/epoch_XXXX/`.
 
-* `train_classifier.py` trains a classifier on CIFAR-10, either from scratch or loading a pretrained encoder. It supports **linear probe** (with `--linear_probe`) or full fine-tuning.
+- `train_classifier.py` trains a classifier on CIFAR-10, either from scratch or loading a pretrained encoder. It supports **linear probe** (with `--linear_probe`) or full fine-tuning.
 
-* `visualize_pred.py` produces side-by-side prediction figures for pretrained vs. scratch classifiers on the same set of test images.
+- `visualize_pred.py` produces side-by-side prediction figures for pretrained vs. scratch classifiers on the same set of test images.
 
-* `utils.py`: seeds and a tiny CSV logger.
+- `utils.py`: seeds and a tiny CSV logger.
+
+- `metrics.ipynb`gets accuracy scores and losses from `metrics.csv` and visualize them.
 
 Outputs are written under:
 
